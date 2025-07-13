@@ -1,3 +1,4 @@
+
 #include <hyprland/src/plugins/PluginSystem.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
@@ -23,9 +24,9 @@ int Config::panelBorderWidth = 2;
 int Config::workspaceMargin = 12;
 int Config::reservedArea = 0;
 int Config::workspaceBorderSize = 1;
-bool Config::adaptiveHeight = false; // TODO: implement
+bool Config::adaptiveHeight = false;
 bool Config::centerAligned = true;
-bool Config::onBottom = true; // TODO: implement
+bool Config::onBottom = true;
 bool Config::hideBackgroundLayers = false;
 bool Config::hideTopLayers = false;
 bool Config::hideOverlayLayers = false;
@@ -55,7 +56,7 @@ float Config::overrideAnimSpeed = 0;
 
 float Config::dragAlpha = 0.2;
 
-int numWorkspaces = -1; //hyprsplit/split-monitor-workspaces support
+int numWorkspaces = -1;
 
 Hyprutils::Memory::CSharedPointer<HOOK_CALLBACK_FN> g_pRenderHook;
 Hyprutils::Memory::CSharedPointer<HOOK_CALLBACK_FN> g_pConfigReloadHook;
@@ -88,7 +89,6 @@ std::shared_ptr<CHyprspaceWidget> getWidgetForMonitor(PHLMONITORREF pMonitor) {
     return nullptr;
 }
 
-// used to enforce the layout
 void refreshWidgets() {
     for (auto& widget : g_overviewWidgets) {
         if (widget != nullptr)
@@ -99,14 +99,12 @@ void refreshWidgets() {
 
 bool g_layoutNeedsRefresh = true;
 
-// for restroing dragged window's alpha value
 float g_oAlpha = -1;
 
 void onRender(void* thisptr, SCallbackInfo& info, std::any args) {
 
     const auto renderStage = std::any_cast<eRenderStage>(args);
 
-    // refresh layout after scheduled recalculation on monitors were carried out in renderMonitor
     if (renderStage == eRenderStage::RENDER_PRE) {
         if (g_layoutNeedsRefresh) {
             refreshWidgets();
@@ -119,11 +117,10 @@ void onRender(void* thisptr, SCallbackInfo& info, std::any args) {
         const auto widget = getWidgetForMonitor(g_pHyprOpenGL->m_renderData.pMonitor);
         if (widget != nullptr)
             if (widget->getOwner()) {
-                //widget->draw();
                 if (const auto curWindow = g_pInputManager->m_currentlyDraggedWindow.lock()) {
                     if (widget->isActive()) {
                         g_oAlpha = curWindow->m_activeInactiveAlpha->goal();
-                        curWindow->m_activeInactiveAlpha->setValueAndWarp(0); // HACK: hide dragged window for the actual pass
+                        curWindow->m_activeInactiveAlpha->setValueAndWarp(0);
                     }
                 }
                 else g_oAlpha = -1;
@@ -156,10 +153,8 @@ void onRender(void* thisptr, SCallbackInfo& info, std::any args) {
     }
 }
 
-// event hook, currently this is only here to re-hide top layer panels on workspace change
 void onWorkspaceChange(void* thisptr, SCallbackInfo& info, std::any args) {
 
-    // wiki is outdated, this is PHLWORKSPACE rather than CWorkspace*
     const auto pWorkspace = std::any_cast<PHLWORKSPACE>(args);
     if (!pWorkspace) return;
 
@@ -169,7 +164,6 @@ void onWorkspaceChange(void* thisptr, SCallbackInfo& info, std::any args) {
             widget->show();
 }
 
-// event hook for click and drag interaction
 void onMouseButton(void* thisptr, SCallbackInfo& info, std::any args) {
 
     const auto e = std::any_cast<IPointer::SButtonEvent>(args);
@@ -189,7 +183,6 @@ void onMouseButton(void* thisptr, SCallbackInfo& info, std::any args) {
 
 }
 
-// event hook for scrolling through panel and workspaces
 void onMouseAxis(void* thisptr, SCallbackInfo& info, std::any args) {
 
     const auto e = std::any_cast<IPointer::SAxisEvent>(std::any_cast<std::unordered_map<std::string, std::any>>(args)["event"]);
@@ -207,7 +200,6 @@ void onMouseAxis(void* thisptr, SCallbackInfo& info, std::any args) {
 
 }
 
-// event hook for swipe
 void onSwipeBegin(void* thisptr, SCallbackInfo& info, std::any args) {
 
     if (Config::disableGestures) return;
@@ -218,7 +210,6 @@ void onSwipeBegin(void* thisptr, SCallbackInfo& info, std::any args) {
     if (widget != nullptr)
         widget->beginSwipe(e);
 
-    // end other widget swipe
     for (auto& w : g_overviewWidgets) {
         if (w != widget && w->isSwiping()) {
             IPointer::SSwipeEndEvent dummy;
@@ -228,7 +219,6 @@ void onSwipeBegin(void* thisptr, SCallbackInfo& info, std::any args) {
     }
 }
 
-// event hook for update swipe, most of the swiping mechanics are here
 void onSwipeUpdate(void* thisptr, SCallbackInfo& info, std::any args) {
 
     if (Config::disableGestures) return;
@@ -240,7 +230,6 @@ void onSwipeUpdate(void* thisptr, SCallbackInfo& info, std::any args) {
         info.cancelled = !widget->updateSwipe(e);
 }
 
-// event hook for end swipe
 void onSwipeEnd(void* thisptr, SCallbackInfo& info, std::any args) {
 
     if (Config::disableGestures) return;
@@ -252,24 +241,20 @@ void onSwipeEnd(void* thisptr, SCallbackInfo& info, std::any args) {
         widget->endSwipe(e);
 }
 
-// Close overview with configurable key
 void onKeyPress(void* thisptr, SCallbackInfo& info, std::any args) {
     const auto e = std::any_cast<IKeyboard::SKeyEvent>(std::any_cast<std::unordered_map<std::string, std::any>>(args)["event"]);
     const auto k = std::any_cast<SP<IKeyboard>>(std::any_cast<std::unordered_map<std::string, std::any>>(args)["keyboard"]);
 
-    const auto keycode = e.keycode + 8; // Because to xkbcommon it's +8 from libinput
+    const auto keycode = e.keycode + 8;
     const xkb_keysym_t keysym = xkb_state_key_get_one_sym(k->m_xkbSymState, keycode);
 
-    // Get configured exit key (default to Escape if not configured)
     const auto cfgExitKey = std::any_cast<Hyprlang::STRING>(HyprlandAPI::getConfigValue(pHandle, "plugin:overview:exitKey")->getValue());
     const xkb_keysym_t cfgExitKeysym = xkb_keysym_from_name(cfgExitKey, XKB_KEYSYM_CASE_INSENSITIVE);
 
-    // If exit key is empty, disable keyboard exit
     if (cfgExitKey[0] == '\0')
         return;
 
     if (keysym == cfgExitKeysym) {
-        // close all panels
         bool overviewActive = false;
         for (auto& widget : g_overviewWidgets) {
             if (widget != nullptr && widget->isActive()) {
@@ -277,7 +262,6 @@ void onKeyPress(void* thisptr, SCallbackInfo& info, std::any args) {
                 overviewActive = true;
             }
         }
-        // Only cancel event if overview was active and closed
         if (overviewActive)
             info.cancelled = true;
     }
@@ -378,7 +362,6 @@ static SDispatchResult dispatchCloseOverview(std::string arg) {
 }
 
 void* findFunctionBySymbol(HANDLE inHandle, const std::string func, const std::string sym) {
-    // should return all functions
     auto funcSearch = HyprlandAPI::findFunctionsByName(inHandle, func);
     for (auto f : funcSearch) {
         if (f.demangled.contains(sym))
@@ -430,8 +413,6 @@ void reloadConfig() {
 
     Config::overrideAnimSpeed = std::any_cast<Hyprlang::FLOAT>(HyprlandAPI::getConfigValue(pHandle, "plugin:overview:overrideAnimSpeed")->getValue());
     
-    // We don't need to store exitKey in Config namespace as it's only used in onKeyPress
-
     for (auto& widget : g_overviewWidgets) {
         widget->updateConfig();
         widget->hide();
@@ -442,18 +423,14 @@ void reloadConfig() {
 
     Config::dragAlpha = std::any_cast<Hyprlang::FLOAT>(HyprlandAPI::getConfigValue(pHandle, "plugin:overview:dragAlpha")->getValue());
 
-    // get number of workspaces from hyprsplit or split-monitor-workspaces plugin config
     Hyprlang::CConfigValue* numWorkspacesConfig = HyprlandAPI::getConfigValue(pHandle, "plugin:hyprsplit:num_workspaces");
     if (!numWorkspacesConfig)
         numWorkspacesConfig = HyprlandAPI::getConfigValue(pHandle, "plugin:split-monitor-workspaces:count");
     if (numWorkspacesConfig)
         numWorkspaces = std::any_cast<Hyprlang::INT>(numWorkspacesConfig->getValue());
-
-    // TODO: schedule frame for monitor?
 }
 
 void registerMonitors() {
-    // create a widget for each monitor
     for (auto& m : g_pCompositor->m_monitors) {
         if (getWidgetForMonitor(m) != nullptr) continue;
         CHyprspaceWidget* widget = new CHyprspaceWidget(m->m_id);
@@ -512,18 +489,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE inHandle) {
     g_pConfigReloadHook = HyprlandAPI::registerCallbackDynamic(pHandle, "configReloaded", [&] (void* thisptr, SCallbackInfo& info, std::any data) { reloadConfig(); });
     HyprlandAPI::reloadConfig();
 
-    HyprlandAPI::addDispatcher(pHandle, "overview:toggle", ::dispatchToggleOverview);
-    HyprlandAPI::addDispatcher(pHandle, "overview:open", ::dispatchOpenOverview);
-    HyprlandAPI::addDispatcher(pHandle, "overview:close", ::dispatchCloseOverview);
+    HyprlandAPI::addDispatcher(pHandle, "overview:toggle", [](std::string arg) { return ::dispatchToggleOverview(arg); });
+    HyprlandAPI::addDispatcher(pHandle, "overview:open", [](std::string arg) { return ::dispatchOpenOverview(arg); });
+    HyprlandAPI::addDispatcher(pHandle, "overview:close", [](std::string arg) { return ::dispatchCloseOverview(arg); });
 
     g_pRenderHook = HyprlandAPI::registerCallbackDynamic(pHandle, "render", onRender);
 
-    // refresh on layer change
     g_pOpenLayerHook = HyprlandAPI::registerCallbackDynamic(pHandle, "openLayer", [&] (void* thisptr, SCallbackInfo& info, std::any data) { g_layoutNeedsRefresh = true; });
     g_pCloseLayerHook = HyprlandAPI::registerCallbackDynamic(pHandle, "closeLayer", [&] (void* thisptr, SCallbackInfo& info, std::any data) { g_layoutNeedsRefresh = true; });
 
-
-    // CKeybindManager::mouse (names too generic bruh) (this is a private function btw)
     pMouseKeybind = findFunctionBySymbol(pHandle, "mouse", "CKeybindManager::mouse");
 
     g_pMouseButtonHook = HyprlandAPI::registerCallbackDynamic(pHandle, "mouseButton", onMouseButton);
@@ -541,11 +515,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE inHandle) {
 
     g_pSwitchWorkspaceHook = HyprlandAPI::registerCallbackDynamic(pHandle, "workspace", onWorkspaceChange);
 
-    // CHyprRenderer::renderWindow
     auto funcSearch = HyprlandAPI::findFunctionsByName(pHandle, "renderWindow");
     pRenderWindow = funcSearch[0].address;
 
-    // CHyprRenderer::renderLayer
     funcSearch = HyprlandAPI::findFunctionsByName(pHandle, "renderLayer");
     pRenderLayer = funcSearch[0].address;
 
